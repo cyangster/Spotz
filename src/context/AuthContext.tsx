@@ -76,23 +76,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [fetchProfile])
 
   const signUp = useCallback(async (email: string, password: string, displayName: string) => {
-    const { data, error } = await supabase.auth.signUp({ email, password })
+    const { data, error } = await supabase.auth.signUp({
+      email,
+      password,
+      options: {
+        data: { display_name: displayName },
+      },
+    })
 
     if (error) {
       return { error: error.message }
     }
 
-    if (data.user) {
-      const { error: profileError } = await supabase.from('profiles').insert({
-        id: data.user.id,
-        display_name: displayName,
-        email,
-      })
-
-      if (profileError) {
-        return { error: profileError.message }
-      }
-
+    if (data.session && data.user) {
       await fetchProfile(data.user.id)
     }
 

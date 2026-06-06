@@ -54,8 +54,8 @@ export function LoginPage() {
 
         {!isSupabaseConfigured && (
           <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
-            Supabase is not configured. Add <code className="text-xs">VITE_SUPABASE_URL</code> and{' '}
-            <code className="text-xs">VITE_SUPABASE_ANON_KEY</code> to your environment, then redeploy.
+            Supabase URL looks wrong. Use your API URL from Project Settings → API, e.g.{' '}
+            <code className="text-xs">https://abc123.supabase.co</code> — not the dashboard link.
           </div>
         )}
 

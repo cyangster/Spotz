@@ -1,7 +1,15 @@
--- Spotz database schema
--- Run this in the Supabase SQL Editor
+-- =============================================================================
+-- Spotz — complete Supabase setup
+-- =============================================================================
+-- Run this entire file in Supabase → SQL Editor → New query → Run.
+-- Safe to re-run on an existing project (policies/triggers are replaced).
+-- =============================================================================
 
--- Profiles (extends auth.users)
+
+-- -----------------------------------------------------------------------------
+-- Tables
+-- -----------------------------------------------------------------------------
+
 create table if not exists public.profiles (
   id uuid primary key references auth.users(id) on delete cascade,
   display_name text not null,
@@ -9,7 +17,6 @@ create table if not exists public.profiles (
   created_at timestamptz default now()
 );
 
--- Groups
 create table if not exists public.groups (
   id uuid primary key default gen_random_uuid(),
   name text not null,
@@ -18,7 +25,6 @@ create table if not exists public.groups (
   created_at timestamptz default now()
 );
 
--- Group members
 create table if not exists public.group_members (
   id uuid primary key default gen_random_uuid(),
   group_id uuid not null references public.groups(id) on delete cascade,
@@ -27,7 +33,6 @@ create table if not exists public.group_members (
   unique (group_id, user_id)
 );
 
--- Pins
 create table if not exists public.pins (
   id uuid primary key default gen_random_uuid(),
   group_id uuid not null references public.groups(id) on delete cascade,
@@ -43,7 +48,6 @@ create table if not exists public.pins (
   created_at timestamptz default now()
 );
 
--- Comments
 create table if not exists public.comments (
   id uuid primary key default gen_random_uuid(),
   pin_id uuid not null references public.pins(id) on delete cascade,
@@ -52,7 +56,30 @@ create table if not exists public.comments (
   created_at timestamptz default now()
 );
 
--- Helper: check group membership
+
+-- -----------------------------------------------------------------------------
+-- Functions
+-- -----------------------------------------------------------------------------
+
+-- Auto-create profile when a user signs up (works with email confirmation)
+create or replace function public.handle_new_user()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  insert into public.profiles (id, display_name, email)
+  values (
+    new.id,
+    coalesce(new.raw_user_meta_data->>'display_name', split_part(new.email, '@', 1)),
+    coalesce(new.email, '')
+  )
+  on conflict (id) do nothing;
+  return new;
+end;
+$$;
+
 create or replace function public.is_group_member(check_group_id uuid)
 returns boolean
 language sql
@@ -68,14 +95,30 @@ as $$
   );
 $$;
 
--- Enable RLS
+
+-- -----------------------------------------------------------------------------
+-- Auth trigger
+-- -----------------------------------------------------------------------------
+
+drop trigger if exists on_auth_user_created on auth.users;
+create trigger on_auth_user_created
+  after insert on auth.users
+  for each row execute function public.handle_new_user();
+
+
+-- -----------------------------------------------------------------------------
+-- Row Level Security
+-- -----------------------------------------------------------------------------
+
 alter table public.profiles enable row level security;
 alter table public.groups enable row level security;
 alter table public.group_members enable row level security;
 alter table public.pins enable row level security;
 alter table public.comments enable row level security;
 
--- Profiles policies
+-- Profiles
+drop policy if exists "Users can insert their own profile" on public.profiles;
+drop policy if exists "Users can view profiles of group co-members" on public.profiles;
 create policy "Users can view profiles of group co-members"
   on public.profiles for select
   using (
@@ -87,37 +130,40 @@ create policy "Users can view profiles of group co-members"
     )
   );
 
-create policy "Users can insert their own profile"
-  on public.profiles for insert
-  with check (id = auth.uid());
-
+drop policy if exists "Users can update their own profile" on public.profiles;
 create policy "Users can update their own profile"
   on public.profiles for update
   using (id = auth.uid());
 
--- Groups policies
+-- Groups
+drop policy if exists "Members can view their groups" on public.groups;
 create policy "Members can view their groups"
   on public.groups for select
   using (public.is_group_member(id));
 
+drop policy if exists "Authenticated users can create groups" on public.groups;
 create policy "Authenticated users can create groups"
   on public.groups for insert
   with check (auth.uid() = created_by);
 
--- Group members policies
+-- Group members
+drop policy if exists "Members can view group membership" on public.group_members;
 create policy "Members can view group membership"
   on public.group_members for select
   using (public.is_group_member(group_id));
 
+drop policy if exists "Users can join groups" on public.group_members;
 create policy "Users can join groups"
   on public.group_members for insert
   with check (user_id = auth.uid());
 
--- Pins policies
+-- Pins
+drop policy if exists "Members can view pins" on public.pins;
 create policy "Members can view pins"
   on public.pins for select
   using (public.is_group_member(group_id));
 
+drop policy if exists "Members can create pins" on public.pins;
 create policy "Members can create pins"
   on public.pins for insert
   with check (
@@ -125,15 +171,18 @@ create policy "Members can create pins"
     and created_by = auth.uid()
   );
 
+drop policy if exists "Creators can update their pins" on public.pins;
 create policy "Creators can update their pins"
   on public.pins for update
   using (created_by = auth.uid() and public.is_group_member(group_id));
 
+drop policy if exists "Creators can delete their pins" on public.pins;
 create policy "Creators can delete their pins"
   on public.pins for delete
   using (created_by = auth.uid() and public.is_group_member(group_id));
 
--- Comments policies
+-- Comments
+drop policy if exists "Members can view comments" on public.comments;
 create policy "Members can view comments"
   on public.comments for select
   using (
@@ -144,6 +193,7 @@ create policy "Members can view comments"
     )
   );
 
+drop policy if exists "Members can post comments" on public.comments;
 create policy "Members can post comments"
   on public.comments for insert
   with check (
@@ -155,11 +205,16 @@ create policy "Members can post comments"
     )
   );
 
--- Storage bucket for pin photos
+
+-- -----------------------------------------------------------------------------
+-- Storage (pin photos)
+-- -----------------------------------------------------------------------------
+
 insert into storage.buckets (id, name, public)
 values ('pin-photos', 'pin-photos', true)
 on conflict (id) do nothing;
 
+drop policy if exists "Members can upload pin photos" on storage.objects;
 create policy "Members can upload pin photos"
   on storage.objects for insert
   with check (
@@ -167,10 +222,46 @@ create policy "Members can upload pin photos"
     and auth.role() = 'authenticated'
   );
 
+drop policy if exists "Anyone can view pin photos" on storage.objects;
 create policy "Anyone can view pin photos"
   on storage.objects for select
   using (bucket_id = 'pin-photos');
 
--- Enable realtime
-alter publication supabase_realtime add table public.pins;
-alter publication supabase_realtime add table public.comments;
+
+-- -----------------------------------------------------------------------------
+-- Realtime
+-- -----------------------------------------------------------------------------
+
+do $$
+begin
+  if not exists (
+    select 1 from pg_publication_tables
+    where pubname = 'supabase_realtime'
+      and schemaname = 'public'
+      and tablename = 'pins'
+  ) then
+    alter publication supabase_realtime add table public.pins;
+  end if;
+
+  if not exists (
+    select 1 from pg_publication_tables
+    where pubname = 'supabase_realtime'
+      and schemaname = 'public'
+      and tablename = 'comments'
+  ) then
+    alter publication supabase_realtime add table public.comments;
+  end if;
+end $$;
+
+
+-- -----------------------------------------------------------------------------
+-- Backfill profiles for auth users created before the trigger existed
+-- -----------------------------------------------------------------------------
+
+insert into public.profiles (id, display_name, email)
+select
+  id,
+  coalesce(raw_user_meta_data->>'display_name', split_part(email, '@', 1)),
+  coalesce(email, '')
+from auth.users
+where id not in (select id from public.profiles);
