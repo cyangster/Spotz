@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from 'react'
 import { Navigate, useLocation } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
+import { isSupabaseConfigured } from '../lib/supabase'
 
 export function LoginPage() {
   const { session, signIn, signUp } = useAuth()
@@ -50,6 +51,13 @@ export function LoginPage() {
           <h1 className="text-2xl font-bold text-slate-900">Spotz</h1>
           <p className="mt-1 text-sm text-slate-500">Shared pin maps for your crew</p>
         </div>
+
+        {!isSupabaseConfigured && (
+          <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+            Supabase is not configured. Add <code className="text-xs">VITE_SUPABASE_URL</code> and{' '}
+            <code className="text-xs">VITE_SUPABASE_ANON_KEY</code> to your environment, then redeploy.
+          </div>
+        )}
 
         <form onSubmit={handleSubmit} className="space-y-4">
           {isSignUp && (
