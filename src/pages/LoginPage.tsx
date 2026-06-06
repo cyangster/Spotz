@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from 'react'
 import { Navigate, useLocation } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
+import { isValidUsername, normalizeUsername } from '../lib/constants'
 import { isSupabaseConfigured } from '../lib/supabase'
 
 export function LoginPage() {
@@ -12,6 +13,7 @@ export function LoginPage() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [displayName, setDisplayName] = useState('')
+  const [username, setUsername] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
 
@@ -30,7 +32,13 @@ export function LoginPage() {
         setLoading(false)
         return
       }
-      const result = await signUp(email, password, displayName.trim())
+      const normalizedUsername = normalizeUsername(username)
+      if (!isValidUsername(normalizedUsername)) {
+        setError('Username must be 3–20 characters (letters, numbers, underscore)')
+        setLoading(false)
+        return
+      }
+      const result = await signUp(email, password, displayName.trim(), normalizedUsername)
       if (result.error) {
         setError(result.error)
       }
@@ -61,16 +69,34 @@ export function LoginPage() {
 
         <form onSubmit={handleSubmit} className="space-y-4">
           {isSignUp && (
-            <div>
-              <label className="mb-1 block text-sm font-medium text-slate-700">Display name</label>
-              <input
-                type="text"
-                value={displayName}
-                onChange={(e) => setDisplayName(e.target.value)}
-                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-                required
-              />
-            </div>
+            <>
+              <div>
+                <label className="mb-1 block text-sm font-medium text-slate-700">Display name</label>
+                <input
+                  type="text"
+                  value={displayName}
+                  onChange={(e) => setDisplayName(e.target.value)}
+                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                  required
+                />
+              </div>
+              <div>
+                <label className="mb-1 block text-sm font-medium text-slate-700">Username</label>
+                <div className="flex rounded-lg border border-slate-300 focus-within:border-blue-500 focus-within:ring-1 focus-within:ring-blue-500">
+                  <span className="flex items-center pl-3 text-sm text-slate-400">@</span>
+                  <input
+                    type="text"
+                    value={username}
+                    onChange={(e) => setUsername(normalizeUsername(e.target.value))}
+                    className="w-full rounded-r-lg px-2 py-2 text-sm focus:outline-none"
+                    placeholder="chris"
+                    required
+                    minLength={3}
+                    maxLength={20}
+                  />
+                </div>
+              </div>
+            </>
           )}
 
           <div>

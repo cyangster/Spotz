@@ -13,6 +13,7 @@
 create table if not exists public.profiles (
   id uuid primary key references auth.users(id) on delete cascade,
   display_name text not null,
+  username text unique not null,
   email text not null,
   created_at timestamptz default now()
 );
@@ -39,6 +40,9 @@ create table if not exists public.pins (
   created_by uuid not null references public.profiles(id),
   label text not null,
   status text not null check (status in ('Went', 'Want to go', 'Favorite', 'Avoid')),
+  category text not null default 'Other' check (
+    category in ('Park', 'Restaurant', 'Cafe', 'Bar', 'Shop', 'Beach', 'Hike', 'Home', 'Other')
+  ),
   color text not null,
   icon text not null,
   notes text,
@@ -69,10 +73,17 @@ security definer
 set search_path = public
 as $$
 begin
-  insert into public.profiles (id, display_name, email)
+  insert into public.profiles (id, display_name, username, email)
   values (
     new.id,
     coalesce(new.raw_user_meta_data->>'display_name', split_part(new.email, '@', 1)),
+    coalesce(
+      nullif(
+        lower(regexp_replace(coalesce(new.raw_user_meta_data->>'username', ''), '[^a-z0-9_]', '', 'g')),
+        ''
+      ),
+      'user' || substr(replace(new.id::text, '-', ''), 1, 8)
+    ),
     coalesce(new.email, '')
   )
   on conflict (id) do nothing;
@@ -282,13 +293,29 @@ end $$;
 
 
 -- -----------------------------------------------------------------------------
--- Backfill profiles for auth users created before the trigger existed
+-- Backfill / migrate existing projects
 -- -----------------------------------------------------------------------------
 
-insert into public.profiles (id, display_name, email)
+alter table public.profiles add column if not exists username text;
+alter table public.pins add column if not exists category text;
+
+update public.pins set category = 'Other' where category is null;
+
+update public.profiles
+set username = 'user' || substr(replace(id::text, '-', ''), 1, 8)
+where username is null;
+
+insert into public.profiles (id, display_name, username, email)
 select
   id,
   coalesce(raw_user_meta_data->>'display_name', split_part(email, '@', 1)),
+  coalesce(
+    nullif(
+      lower(regexp_replace(coalesce(raw_user_meta_data->>'username', ''), '[^a-z0-9_]', '', 'g')),
+      ''
+    ),
+    'user' || substr(replace(id::text, '-', ''), 1, 8)
+  ),
   coalesce(email, '')
 from auth.users
 where id not in (select id from public.profiles);

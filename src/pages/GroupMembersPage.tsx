@@ -3,7 +3,7 @@ import { useParams } from 'react-router-dom'
 import { Layout } from '../components/Layout'
 import { supabase } from '../lib/supabase'
 import { formatDate } from '../lib/constants'
-import type { Group, GroupMember } from '../lib/types'
+import { PROFILE_SELECT, type Group, type GroupMember } from '../lib/types'
 
 export function GroupMembersPage() {
   const { id: groupId } = useParams<{ id: string }>()
@@ -32,7 +32,7 @@ export function GroupMembersPage() {
 
       const { data: memberData, error: memberError } = await supabase
         .from('group_members')
-        .select('*, profile:profiles(id, display_name, email)')
+        .select(`*, profile:profiles(${PROFILE_SELECT})`)
         .eq('group_id', groupId)
         .order('joined_at', { ascending: true })
 
@@ -69,6 +69,11 @@ export function GroupMembersPage() {
                 <div>
                   <p className="font-medium text-slate-900">
                     {member.profile?.display_name ?? 'Unknown'}
+                    {member.profile?.username && (
+                      <span className="ml-1 text-sm font-normal text-blue-600">
+                        @{member.profile.username}
+                      </span>
+                    )}
                   </p>
                   <p className="text-xs text-slate-500">{member.profile?.email}</p>
                 </div>

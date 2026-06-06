@@ -1,24 +1,36 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
-import { MapContainer, TileLayer, useMapEvents } from 'react-leaflet'
+import { MapContainer, TileLayer, useMap, useMapEvents } from 'react-leaflet'
 import { useAuth } from '../context/AuthContext'
 import { DropPinForm } from '../components/DropPinForm'
 import { PinDetailPanel } from '../components/PinDetailPanel'
 import { PinMarker } from '../components/PinMarker'
+import { CenterOnUserButton, UserLocationMarker } from '../components/UserLocationMarker'
 import { supabase } from '../lib/supabase'
-import type { Group, Pin } from '../lib/types'
+import { PROFILE_SELECT, type Group, type Pin } from '../lib/types'
 
 interface MapClickHandlerProps {
-  onRightClick: (lat: number, lng: number) => void
+  onMapClick: (lat: number, lng: number) => void
+  disabled: boolean
 }
 
-function MapClickHandler({ onRightClick }: MapClickHandlerProps) {
+function MapClickHandler({ onMapClick, disabled }: MapClickHandlerProps) {
   useMapEvents({
-    contextmenu(e) {
-      e.originalEvent.preventDefault()
-      onRightClick(e.latlng.lat, e.latlng.lng)
+    click(e) {
+      if (disabled) return
+      onMapClick(e.latlng.lat, e.latlng.lng)
     },
   })
+  return null
+}
+
+function MapInitialCenter({ lat, lng }: { lat: number; lng: number }) {
+  const map = useMap()
+
+  useEffect(() => {
+    map.setView([lat, lng], Math.max(map.getZoom(), 14))
+  }, [lat, lng, map])
+
   return null
 }
 
@@ -30,16 +42,16 @@ export function GroupMapPage() {
   const [pins, setPins] = useState<Pin[]>([])
   const [selectedPin, setSelectedPin] = useState<Pin | null>(null)
   const [dropLocation, setDropLocation] = useState<{ lat: number; lng: number } | null>(null)
+  const [initialCenter, setInitialCenter] = useState<{ lat: number; lng: number } | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [locating, setLocating] = useState(false)
 
   const loadPins = useCallback(async () => {
     if (!groupId) return
 
     const { data, error: pinError } = await supabase
       .from('pins')
-      .select('*, profile:profiles(id, display_name, email)')
+      .select(`*, profile:profiles(${PROFILE_SELECT})`)
       .eq('group_id', groupId)
       .order('created_at', { ascending: false })
 
@@ -105,34 +117,21 @@ export function GroupMapPage() {
     }
   }, [groupId, loadPins])
 
-  function handleDropAtCurrentLocation() {
-    if (!navigator.geolocation) {
-      setError('Geolocation is not supported by your browser')
-      return
-    }
+  const handleMapClick = useCallback((lat: number, lng: number) => {
+    setSelectedPin(null)
+    setDropLocation({ lat, lng })
+  }, [])
 
-    setLocating(true)
-    navigator.geolocation.getCurrentPosition(
-      (position) => {
-        setDropLocation({
-          lat: position.coords.latitude,
-          lng: position.coords.longitude,
-        })
-        setLocating(false)
-      },
-      () => {
-        setError('Could not get your location')
-        setLocating(false)
-      },
-    )
-  }
+  const handleFirstLocation = useCallback((lat: number, lng: number) => {
+    setInitialCenter((prev) => prev ?? { lat, lng })
+  }, [])
 
   function handlePinUpdated() {
     loadPins()
     if (selectedPin) {
       supabase
         .from('pins')
-        .select('*, profile:profiles(id, display_name, email)')
+        .select(`*, profile:profiles(${PROFILE_SELECT})`)
         .eq('id', selectedPin.id)
         .single()
         .then(({ data }) => {
@@ -172,20 +171,13 @@ export function GroupMapPage() {
           </h1>
         </div>
         <div className="flex shrink-0 items-center gap-2">
+          <span className="hidden text-xs text-slate-500 sm:inline">Click map to drop a pin</span>
           <Link
             to={`/group/${groupId}/members`}
             className="rounded-lg border border-slate-300 px-2 py-1 text-xs text-slate-700 hover:bg-slate-50 sm:px-3 sm:text-sm"
           >
             Members
           </Link>
-          <button
-            type="button"
-            onClick={handleDropAtCurrentLocation}
-            disabled={locating}
-            className="rounded-lg bg-blue-600 px-2 py-1 text-xs font-medium text-white hover:bg-blue-700 disabled:opacity-50 sm:px-3 sm:text-sm"
-          >
-            {locating ? 'Locating...' : '📍 Drop here'}
-          </button>
         </div>
       </div>
 
@@ -208,13 +200,12 @@ export function GroupMapPage() {
           attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
           url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
         />
-        <MapClickHandler onRightClick={(lat, lng) => setDropLocation({ lat, lng })} />
+        {initialCenter && <MapInitialCenter lat={initialCenter.lat} lng={initialCenter.lng} />}
+        <UserLocationMarker onFirstFix={handleFirstLocation} />
+        <CenterOnUserButton />
+        <MapClickHandler onMapClick={handleMapClick} disabled={Boolean(dropLocation)} />
         {pins.map((pin) => (
-          <PinMarker
-            key={pin.id}
-            pin={pin}
-            onSelect={(p) => setSelectedPin(p)}
-          />
+          <PinMarker key={pin.id} pin={pin} onSelect={(p) => setSelectedPin(p)} />
         ))}
       </MapContainer>
 
@@ -229,9 +220,10 @@ export function GroupMapPage() {
         />
       )}
 
-      {selectedPin && user && (
+      {selectedPin && user && groupId && (
         <PinDetailPanel
           pin={selectedPin}
+          groupId={groupId}
           userId={user.id}
           onClose={() => setSelectedPin(null)}
           onUpdated={handlePinUpdated}

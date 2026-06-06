@@ -31,7 +31,9 @@ export function Layout({ children, title, backTo, actions }: LayoutProps) {
           <div className="flex items-center gap-3">
             {actions}
             {profile && (
-              <span className="hidden text-sm text-slate-500 sm:inline">{profile.display_name}</span>
+              <span className="hidden text-sm text-slate-500 sm:inline">
+                @{profile.username}
+              </span>
             )}
             <button
               type="button"

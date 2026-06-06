@@ -1,8 +1,20 @@
 export type PinStatus = 'Went' | 'Want to go' | 'Favorite' | 'Avoid'
 
+export type PinCategory =
+  | 'Park'
+  | 'Restaurant'
+  | 'Cafe'
+  | 'Bar'
+  | 'Shop'
+  | 'Beach'
+  | 'Hike'
+  | 'Home'
+  | 'Other'
+
 export interface Profile {
   id: string
   display_name: string
+  username: string
   email: string
 }
 
@@ -28,6 +40,7 @@ export interface Pin {
   created_by: string
   label: string
   status: PinStatus
+  category: PinCategory
   color: string
   icon: string
   notes: string | null
@@ -50,3 +63,5 @@ export interface Comment {
 export interface GroupWithRole extends Group {
   member_count?: number
 }
+
+export const PROFILE_SELECT = 'id, display_name, username, email'

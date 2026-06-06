@@ -10,13 +10,14 @@ import {
 import type { Session, User } from '@supabase/supabase-js'
 import { supabase } from '../lib/supabase'
 import type { Profile } from '../lib/types'
+import { PROFILE_SELECT } from '../lib/types'
 
 interface AuthContextValue {
   session: Session | null
   user: User | null
   profile: Profile | null
   loading: boolean
-  signUp: (email: string, password: string, displayName: string) => Promise<{ error: string | null }>
+  signUp: (email: string, password: string, displayName: string, username: string) => Promise<{ error: string | null }>
   signIn: (email: string, password: string) => Promise<{ error: string | null }>
   signOut: () => Promise<void>
   refreshProfile: () => Promise<void>
@@ -32,7 +33,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const fetchProfile = useCallback(async (userId: string) => {
     const { data, error } = await supabase
       .from('profiles')
-      .select('id, display_name, email')
+      .select(PROFILE_SELECT)
       .eq('id', userId)
       .single()
 
@@ -75,12 +76,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => subscription.unsubscribe()
   }, [fetchProfile])
 
-  const signUp = useCallback(async (email: string, password: string, displayName: string) => {
+  const signUp = useCallback(async (email: string, password: string, displayName: string, username: string) => {
     const { data, error } = await supabase.auth.signUp({
       email,
       password,
       options: {
-        data: { display_name: displayName },
+        data: { display_name: displayName, username },
       },
     })
 

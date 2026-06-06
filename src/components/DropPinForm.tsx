@@ -1,12 +1,18 @@
 import { useState, type FormEvent } from 'react'
-import type { PinStatus } from '../lib/types'
-import { PIN_COLORS, PIN_ICONS, PIN_STATUSES } from '../lib/constants'
+import type { PinCategory, PinStatus } from '../lib/types'
+import {
+  getCategoryColor,
+  getCategoryMeta,
+  PIN_CATEGORIES,
+  PIN_ICONS,
+  PIN_STATUSES,
+} from '../lib/constants'
 import { supabase } from '../lib/supabase'
 
 export interface DropPinData {
   label: string
   status: PinStatus
-  color: string
+  category: PinCategory
   icon: string
   notes: string
   photo: File | null
@@ -33,16 +39,21 @@ export function DropPinForm({
   initialData,
   pinId,
 }: DropPinFormProps) {
-  const [label, setLabel] = useState(initialData?.label ?? '')
+  const [name, setName] = useState(initialData?.label ?? '')
   const [status, setStatus] = useState<PinStatus>(initialData?.status ?? 'Want to go')
-  const [color, setColor] = useState(initialData?.color ?? PIN_COLORS[5])
-  const [icon, setIcon] = useState(initialData?.icon ?? PIN_ICONS[0])
+  const [category, setCategory] = useState<PinCategory>(initialData?.category ?? 'Other')
+  const [icon, setIcon] = useState(initialData?.icon ?? getCategoryMeta('Other').icon)
   const [notes, setNotes] = useState(initialData?.notes ?? '')
   const [photo, setPhoto] = useState<File | null>(null)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   const isEditing = Boolean(pinId)
+
+  function handleCategoryChange(nextCategory: PinCategory) {
+    setCategory(nextCategory)
+    setIcon(getCategoryMeta(nextCategory).icon)
+  }
 
   async function uploadPhoto(file: File): Promise<string | null> {
     const ext = file.name.split('.').pop() ?? 'jpg'
@@ -62,13 +73,15 @@ export function DropPinForm({
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault()
-    if (!label.trim()) {
-      setError('Label is required')
+    if (!name.trim()) {
+      setError('Name is required')
       return
     }
 
     setSaving(true)
     setError(null)
+
+    const color = getCategoryColor(category)
 
     try {
       let photoUrl: string | null = null
@@ -78,8 +91,9 @@ export function DropPinForm({
 
       if (isEditing && pinId) {
         const updates: Record<string, unknown> = {
-          label: label.trim(),
+          label: name.trim(),
           status,
+          category,
           color,
           icon,
           notes: notes.trim() || null,
@@ -99,8 +113,9 @@ export function DropPinForm({
         const { error: insertError } = await supabase.from('pins').insert({
           group_id: groupId,
           created_by: userId,
-          label: label.trim(),
+          label: name.trim(),
           status,
+          category,
           color,
           icon,
           notes: notes.trim() || null,
@@ -139,11 +154,11 @@ export function DropPinForm({
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
-            <label className="mb-1 block text-sm font-medium text-slate-700">Label *</label>
+            <label className="mb-1 block text-sm font-medium text-slate-700">Name *</label>
             <input
               type="text"
-              value={label}
-              onChange={(e) => setLabel(e.target.value)}
+              value={name}
+              onChange={(e) => setName(e.target.value)}
               className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
               placeholder="Coffee spot, best view..."
               required
@@ -166,17 +181,23 @@ export function DropPinForm({
           </div>
 
           <div>
-            <label className="mb-2 block text-sm font-medium text-slate-700">Color</label>
-            <div className="flex flex-wrap gap-2">
-              {PIN_COLORS.map((c) => (
+            <label className="mb-2 block text-sm font-medium text-slate-700">Category *</label>
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+              {PIN_CATEGORIES.map((item) => (
                 <button
-                  key={c}
+                  key={item.id}
                   type="button"
-                  onClick={() => setColor(c)}
-                  className={`h-8 w-8 rounded-full border-2 ${color === c ? 'border-slate-900' : 'border-transparent'}`}
-                  style={{ backgroundColor: c }}
-                  aria-label={`Color ${c}`}
-                />
+                  onClick={() => handleCategoryChange(item.id)}
+                  className={`flex items-center gap-2 rounded-lg border px-3 py-2 text-sm ${
+                    category === item.id ? 'border-slate-900 bg-slate-50' : 'border-slate-200'
+                  }`}
+                >
+                  <span
+                    className="h-3 w-3 shrink-0 rounded-full"
+                    style={{ backgroundColor: item.color }}
+                  />
+                  <span>{item.label}</span>
+                </button>
               ))}
             </div>
           </div>

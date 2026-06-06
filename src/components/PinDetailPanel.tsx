@@ -1,20 +1,32 @@
-import { useEffect, useState, type FormEvent } from 'react'
+import { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
-import type { Comment, Pin } from '../lib/types'
-import { formatDate } from '../lib/constants'
+import type { Comment, Pin, PinCategory, Profile } from '../lib/types'
+import { PROFILE_SELECT } from '../lib/types'
+import { formatDate, getCategoryMeta } from '../lib/constants'
+import { renderTextWithMentions } from '../lib/mentions'
+import { CommentInput } from './CommentInput'
 import { StatusBadge } from './StatusBadge'
 import { DropPinForm } from './DropPinForm'
 
 interface PinDetailPanelProps {
   pin: Pin
+  groupId: string
   userId: string
   onClose: () => void
   onUpdated: () => void
   onDeleted: () => void
 }
 
-export function PinDetailPanel({ pin, userId, onClose, onUpdated, onDeleted }: PinDetailPanelProps) {
+export function PinDetailPanel({
+  pin,
+  groupId,
+  userId,
+  onClose,
+  onUpdated,
+  onDeleted,
+}: PinDetailPanelProps) {
   const [comments, setComments] = useState<Comment[]>([])
+  const [members, setMembers] = useState<Profile[]>([])
   const [newComment, setNewComment] = useState('')
   const [loadingComments, setLoadingComments] = useState(true)
   const [posting, setPosting] = useState(false)
@@ -23,11 +35,13 @@ export function PinDetailPanel({ pin, userId, onClose, onUpdated, onDeleted }: P
   const [error, setError] = useState<string | null>(null)
 
   const isOwner = pin.created_by === userId
+  const category = (pin.category ?? 'Other') as PinCategory
+  const categoryMeta = getCategoryMeta(category)
 
   async function loadComments() {
     const { data, error: fetchError } = await supabase
       .from('comments')
-      .select('*, profile:profiles(id, display_name, email)')
+      .select(`*, profile:profiles(${PROFILE_SELECT})`)
       .eq('pin_id', pin.id)
       .order('created_at', { ascending: true })
 
@@ -39,8 +53,18 @@ export function PinDetailPanel({ pin, userId, onClose, onUpdated, onDeleted }: P
     setLoadingComments(false)
   }
 
+  async function loadMembers() {
+    const { data } = await supabase
+      .from('group_members')
+      .select(`profile:profiles!inner(${PROFILE_SELECT})`)
+      .eq('group_id', groupId)
+
+    setMembers((data ?? []).map((row) => row.profile as unknown as Profile))
+  }
+
   useEffect(() => {
     loadComments()
+    loadMembers()
 
     const channel = supabase
       .channel(`comments:${pin.id}`)
@@ -54,10 +78,9 @@ export function PinDetailPanel({ pin, userId, onClose, onUpdated, onDeleted }: P
     return () => {
       supabase.removeChannel(channel)
     }
-  }, [pin.id])
+  }, [pin.id, groupId])
 
-  async function handlePostComment(e: FormEvent) {
-    e.preventDefault()
+  async function handlePostComment() {
     if (!newComment.trim()) return
 
     setPosting(true)
@@ -108,7 +131,7 @@ export function PinDetailPanel({ pin, userId, onClose, onUpdated, onDeleted }: P
         initialData={{
           label: pin.label,
           status: pin.status,
-          color: pin.color,
+          category,
           icon: pin.icon,
           notes: pin.notes ?? '',
         }}
@@ -128,9 +151,18 @@ export function PinDetailPanel({ pin, userId, onClose, onUpdated, onDeleted }: P
       </div>
 
       <div className="flex-1 overflow-y-auto p-4">
-        <div className="mb-4 flex items-center gap-2">
+        <div className="mb-4 flex flex-wrap items-center gap-2">
           <span className="text-2xl">{pin.icon}</span>
           <StatusBadge status={pin.status} />
+          <span
+            className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 px-2.5 py-0.5 text-xs font-medium text-slate-700"
+          >
+            <span
+              className="h-2 w-2 rounded-full"
+              style={{ backgroundColor: categoryMeta.color }}
+            />
+            {categoryMeta.label}
+          </span>
         </div>
 
         {pin.photo_url && (
@@ -146,7 +178,8 @@ export function PinDetailPanel({ pin, userId, onClose, onUpdated, onDeleted }: P
         )}
 
         <p className="mb-6 text-xs text-slate-500">
-          Dropped by {pin.profile?.display_name ?? 'Unknown'} · {formatDate(pin.created_at)}
+          Dropped by {pin.profile?.display_name ?? 'Unknown'}
+          {pin.profile?.username ? ` (@${pin.profile.username})` : ''} · {formatDate(pin.created_at)}
         </p>
 
         {isOwner && (
@@ -183,33 +216,29 @@ export function PinDetailPanel({ pin, userId, onClose, onUpdated, onDeleted }: P
                   <div className="mb-1 flex items-baseline justify-between gap-2">
                     <span className="text-sm font-medium text-slate-900">
                       {comment.profile?.display_name ?? 'Unknown'}
+                      {comment.profile?.username && (
+                        <span className="ml-1 font-normal text-blue-600">
+                          @{comment.profile.username}
+                        </span>
+                      )}
                     </span>
                     <span className="text-xs text-slate-400">
                       {formatDate(comment.created_at)}
                     </span>
                   </div>
-                  <p className="text-sm text-slate-700">{comment.content}</p>
+                  <p className="text-sm text-slate-700">{renderTextWithMentions(comment.content)}</p>
                 </li>
               ))}
             </ul>
           )}
 
-          <form onSubmit={handlePostComment} className="flex gap-2">
-            <input
-              type="text"
-              value={newComment}
-              onChange={(e) => setNewComment(e.target.value)}
-              placeholder="Add a comment..."
-              className="flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-            />
-            <button
-              type="submit"
-              disabled={posting || !newComment.trim()}
-              className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
-            >
-              Post
-            </button>
-          </form>
+          <CommentInput
+            members={members}
+            value={newComment}
+            onChange={setNewComment}
+            onSubmit={handlePostComment}
+            posting={posting}
+          />
 
           {error && <p className="mt-2 text-sm text-red-600">{error}</p>}
         </div>

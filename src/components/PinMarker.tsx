@@ -28,7 +28,10 @@ export function PinMarker({ pin, onSelect }: PinMarkerProps) {
       position={[pin.latitude, pin.longitude]}
       icon={createPinIcon(pin.color, pin.icon)}
       eventHandlers={{
-        click: () => onSelect(pin),
+        click: (e) => {
+          e.originalEvent.stopPropagation()
+          onSelect(pin)
+        },
       }}
     />
   )
