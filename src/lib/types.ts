@@ -66,3 +66,9 @@ export interface GroupWithRole extends Group {
 }
 
 export const PROFILE_SELECT = 'id, display_name, username, email, avatar_url'
+
+export const PROFILE_EMBED = {
+  comment: `profiles!comments_user_id_fkey(${PROFILE_SELECT})`,
+  pin: `profiles!pins_created_by_fkey(${PROFILE_SELECT})`,
+  member: `profiles!group_members_user_id_fkey(${PROFILE_SELECT})`,
+} as const

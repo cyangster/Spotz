@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useAuth } from '../context/AuthContext'
 import { supabase } from '../lib/supabase'
 import type { Comment, Pin, PinCategory, Profile } from '../lib/types'
-import { PROFILE_SELECT } from '../lib/types'
+import { PROFILE_EMBED } from '../lib/types'
 import { formatDate, getCategoryMeta } from '../lib/constants'
 import { commentMentionsUsername, renderTextWithMentions } from '../lib/mentions'
 import {
@@ -56,7 +56,7 @@ export function PinDetailPanel({
   async function loadComments() {
     const { data, error: fetchError } = await supabase
       .from('comments')
-      .select(`*, profile:profiles(${PROFILE_SELECT})`)
+      .select(`*, profile:${PROFILE_EMBED.comment}`)
       .eq('pin_id', pin.id)
       .order('created_at', { ascending: true })
 
@@ -71,7 +71,7 @@ export function PinDetailPanel({
   async function loadMembers() {
     const { data } = await supabase
       .from('group_members')
-      .select(`profile:profiles!inner(${PROFILE_SELECT})`)
+      .select(`profile:${PROFILE_EMBED.member}`)
       .eq('group_id', groupId)
 
     setMembers((data ?? []).map((row) => row.profile as unknown as Profile))
@@ -90,8 +90,11 @@ export function PinDetailPanel({
       )
       .subscribe()
 
+    const interval = setInterval(loadComments, 4000)
+
     return () => {
       supabase.removeChannel(channel)
+      clearInterval(interval)
       const currentProfile = profileRef.current
       if (currentProfile?.username) {
         const toMark = getMentionedUnreadOnPin(
@@ -104,6 +107,14 @@ export function PinDetailPanel({
       }
     }
   }, [pin.id, groupId, userId, markRead])
+
+  useEffect(() => {
+    if (!profile?.username || loadingComments) return
+    const toMark = getMentionedUnreadOnPin(comments, profile.username, userId, unreadIds)
+    if (toMark.length > 0) {
+      void markRead(toMark)
+    }
+  }, [comments, loadingComments, profile?.username, userId, unreadIds, markRead])
 
   async function handlePostComment() {
     if (!newComment.trim()) return
@@ -121,6 +132,7 @@ export function PinDetailPanel({
       setError(insertError.message)
     } else {
       setNewComment('')
+      await loadComments()
     }
     setPosting(false)
   }
@@ -259,11 +271,7 @@ export function PinDetailPanel({
                       commentMentionedMe(comment) ? 'bg-blue-50 ring-1 ring-blue-100' : 'bg-slate-50'
                     }`}
                   >
-                    <UserAvatar
-                      profile={author}
-                      size="sm"
-                      showMentionBadge={commentMentionedMe(comment)}
-                    />
+                    <UserAvatar profile={author} size="sm" />
                     <div className="min-w-0 flex-1">
                       <div className="mb-1 flex items-baseline justify-between gap-2">
                         <span className="text-sm font-medium text-slate-900">

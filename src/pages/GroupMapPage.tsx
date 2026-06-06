@@ -7,8 +7,9 @@ import { PinDetailPanel } from '../components/PinDetailPanel'
 import { PinMarker } from '../components/PinMarker'
 import { CenterOnUserButton, UserLocationMarker } from '../components/UserLocationMarker'
 import { HeaderProfileMenu } from '../components/HeaderProfileMenu'
+import { useUnreadMentions } from '../hooks/useUnreadMentions'
 import { supabase } from '../lib/supabase'
-import { PROFILE_SELECT, type Group, type Pin } from '../lib/types'
+import { PROFILE_EMBED, type Group, type Pin } from '../lib/types'
 
 interface MapClickHandlerProps {
   onMapClick: (lat: number, lng: number) => void
@@ -37,7 +38,8 @@ function MapInitialCenter({ lat, lng }: { lat: number; lng: number }) {
 
 export function GroupMapPage() {
   const { id: groupId } = useParams<{ id: string }>()
-  const { user } = useAuth()
+  const { user, profile } = useAuth()
+  const { unreadPinIds } = useUnreadMentions(profile?.username, user?.id)
 
   const [group, setGroup] = useState<Group | null>(null)
   const [pins, setPins] = useState<Pin[]>([])
@@ -52,7 +54,7 @@ export function GroupMapPage() {
 
     const { data, error: pinError } = await supabase
       .from('pins')
-      .select(`*, profile:profiles(${PROFILE_SELECT})`)
+      .select(`*, profile:${PROFILE_EMBED.pin}`)
       .eq('group_id', groupId)
       .order('created_at', { ascending: false })
 
@@ -113,8 +115,11 @@ export function GroupMapPage() {
       )
       .subscribe()
 
+    const interval = setInterval(loadPins, 8000)
+
     return () => {
       supabase.removeChannel(channel)
+      clearInterval(interval)
     }
   }, [groupId, loadPins])
 
@@ -132,7 +137,7 @@ export function GroupMapPage() {
     if (selectedPin) {
       supabase
         .from('pins')
-        .select(`*, profile:profiles(${PROFILE_SELECT})`)
+        .select(`*, profile:${PROFILE_EMBED.pin}`)
         .eq('id', selectedPin.id)
         .single()
         .then(({ data }) => {
@@ -207,7 +212,13 @@ export function GroupMapPage() {
         <CenterOnUserButton />
         <MapClickHandler onMapClick={handleMapClick} disabled={Boolean(dropLocation)} />
         {pins.map((pin) => (
-          <PinMarker key={pin.id} pin={pin} onSelect={(p) => setSelectedPin(p)} />
+          <PinMarker
+            key={pin.id}
+            pin={pin}
+            isOwn={pin.created_by === user?.id}
+            hasUnreadMention={unreadPinIds.has(pin.id)}
+            onSelect={(p) => setSelectedPin(p)}
+          />
         ))}
       </MapContainer>
 

@@ -4,7 +4,7 @@ import { Layout } from '../components/Layout'
 import { UserAvatar } from '../components/UserAvatar'
 import { supabase } from '../lib/supabase'
 import { formatDate } from '../lib/constants'
-import { PROFILE_SELECT, type Group, type GroupMember } from '../lib/types'
+import { PROFILE_EMBED, type Group, type GroupMember } from '../lib/types'
 
 export function GroupMembersPage() {
   const { id: groupId } = useParams<{ id: string }>()
@@ -33,7 +33,7 @@ export function GroupMembersPage() {
 
       const { data: memberData, error: memberError } = await supabase
         .from('group_members')
-        .select(`*, profile:profiles(${PROFILE_SELECT})`)
+        .select(`*, profile:${PROFILE_EMBED.member}`)
         .eq('group_id', groupId)
         .order('joined_at', { ascending: true })
 
