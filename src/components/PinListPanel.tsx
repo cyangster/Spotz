@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react'
 import type { Pin, PinCategory, PinStatus } from '../lib/types'
+import { filterPinsByKeywords } from '../lib/pinSearch'
 import {
   PIN_CATEGORIES,
   PIN_STATUSES,
@@ -21,19 +22,10 @@ export function PinListPanel({ pins, selectedPinId, onSelectPin, onClose }: PinL
   const [statusFilter, setStatusFilter] = useState<PinStatus[]>([...PIN_STATUSES])
   const [collapsed, setCollapsed] = useState<Set<PinCategory>>(new Set())
 
-  const filteredPins = useMemo(() => {
-    return pins.filter((pin) => {
-      const category = (pin.category ?? 'Other') as PinCategory
-      if (!statusFilter.includes(pin.status)) return false
-      if (!search.trim()) return true
-      const q = search.toLowerCase()
-      return (
-        pin.label.toLowerCase().includes(q) ||
-        category.toLowerCase().includes(q) ||
-        (pin.address?.toLowerCase().includes(q) ?? false)
-      )
-    })
-  }, [pins, search, statusFilter])
+  const filteredPins = useMemo(
+    () => filterPinsByKeywords(pins, search).filter((pin) => statusFilter.includes(pin.status)),
+    [pins, search, statusFilter],
+  )
 
   const grouped = useMemo(() => {
     const sortPins = (list: Pin[]) => {
@@ -87,7 +79,7 @@ export function PinListPanel({ pins, selectedPinId, onSelectPin, onClose }: PinL
           type="search"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          placeholder="Search pins..."
+          placeholder="Search keywords, name, address, notes..."
           className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
         />
 

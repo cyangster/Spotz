@@ -2,7 +2,8 @@ import { useCallback, useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { MapContainer, TileLayer, useMap, useMapEvents } from 'react-leaflet'
 import { useAuth } from '../context/AuthContext'
-import { DropPinForm } from '../components/DropPinForm'
+import { DropPinForm, type DropPinData } from '../components/DropPinForm'
+import { MapSearchBar } from '../components/MapSearchBar'
 import { PinDetailPanel } from '../components/PinDetailPanel'
 import { PinListPanel } from '../components/PinListPanel'
 import { PinMarker } from '../components/PinMarker'
@@ -56,6 +57,7 @@ export function GroupMapPage() {
   const [pins, setPins] = useState<Pin[]>([])
   const [selectedPin, setSelectedPin] = useState<Pin | null>(null)
   const [dropLocation, setDropLocation] = useState<{ lat: number; lng: number } | null>(null)
+  const [dropInitialData, setDropInitialData] = useState<Partial<DropPinData> | undefined>()
   const [initialCenter, setInitialCenter] = useState<{ lat: number; lng: number } | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -138,8 +140,25 @@ export function GroupMapPage() {
 
   const handleMapClick = useCallback((lat: number, lng: number) => {
     setSelectedPin(null)
+    setDropInitialData(undefined)
     setDropLocation({ lat, lng })
   }, [])
+
+  function openDropPin(
+    lat: number,
+    lng: number,
+    initialData?: Partial<DropPinData>,
+  ) {
+    setSelectedPin(null)
+    setDropInitialData(initialData)
+    setDropLocation({ lat, lng })
+    setMapFocus({ lat, lng })
+  }
+
+  function closeDropPin() {
+    setDropLocation(null)
+    setDropInitialData(undefined)
+  }
 
   const handleFirstLocation = useCallback((lat: number, lng: number) => {
     setInitialCenter((prev) => prev ?? { lat, lng })
@@ -206,7 +225,9 @@ export function GroupMapPage() {
           </h1>
         </div>
         <div className="flex shrink-0 items-center gap-2">
-          <span className="hidden text-xs text-slate-500 sm:inline">Click map to drop a pin</span>
+          <span className="hidden text-xs text-slate-500 lg:inline">
+            Search above or click map to drop a pin
+          </span>
           <Link
             to={`/group/${groupId}/members`}
             className="rounded-lg border border-slate-300 px-2 py-1 text-xs text-slate-700 hover:bg-slate-50 sm:px-3 sm:text-sm"
@@ -225,6 +246,20 @@ export function GroupMapPage() {
           </button>
         </div>
       )}
+
+      <MapSearchBar
+        pins={pins}
+        disabled={Boolean(dropLocation)}
+        onSelectPin={(pin) => {
+          selectPin(pin)
+        }}
+        onSelectPlace={(place) => {
+          openDropPin(place.latitude, place.longitude, {
+            label: place.label,
+            address: place.address,
+          })
+        }}
+      />
 
       <MapContainer
         center={[40.7128, -74.006]}
@@ -266,11 +301,13 @@ export function GroupMapPage() {
 
       {dropLocation && user && groupId && (
         <DropPinForm
+          key={`${dropLocation.lat}-${dropLocation.lng}-${dropInitialData?.label ?? ''}`}
           groupId={groupId}
           latitude={dropLocation.lat}
           longitude={dropLocation.lng}
           userId={user.id}
-          onClose={() => setDropLocation(null)}
+          initialData={dropInitialData}
+          onClose={closeDropPin}
           onSaved={loadPins}
         />
       )}
