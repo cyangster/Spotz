@@ -129,7 +129,7 @@ $$;
 
 grant execute on function public.get_group_id_by_invite_code(text) to authenticated;
 
--- Quick status update from pin card (any group member)
+-- Quick status update from pin card (pin owner only)
 create or replace function public.update_pin_status(p_pin_id uuid, p_status text)
 returns void
 language plpgsql
@@ -138,14 +138,22 @@ set search_path = public
 as $$
 declare
   v_group_id uuid;
+  v_created_by uuid;
 begin
   if p_status not in ('Went', 'Want to go', 'Favorite', 'Avoid') then
     raise exception 'invalid status';
   end if;
 
-  select group_id into v_group_id from public.pins where id = p_pin_id;
+  select group_id, created_by
+  into v_group_id, v_created_by
+  from public.pins
+  where id = p_pin_id;
 
   if v_group_id is null or not public.is_group_member(v_group_id) then
+    raise exception 'not allowed';
+  end if;
+
+  if v_created_by is distinct from auth.uid() then
     raise exception 'not allowed';
   end if;
 

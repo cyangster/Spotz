@@ -10,7 +10,7 @@ import {
   useUnreadMentions,
 } from '../hooks/useUnreadMentions'
 import { CommentInput } from './CommentInput'
-import { StatusPicker } from './StatusBadge'
+import { StatusBadge, StatusPicker } from './StatusBadge'
 import { DropPinForm } from './DropPinForm'
 import { UserAvatar } from './UserAvatar'
 
@@ -254,12 +254,18 @@ export function PinDetailPanel({
               {categoryMeta.label}
             </span>
           </div>
-          <p className="mb-2 text-xs font-medium text-slate-500">Status — tap to change</p>
-          <StatusPicker
-            status={status}
-            onChange={handleStatusChange}
-            disabled={updatingStatus}
-          />
+          <p className="mb-2 text-xs font-medium text-slate-500">
+            {isOwner ? 'Status — tap to change' : 'Status'}
+          </p>
+          {isOwner ? (
+            <StatusPicker
+              status={status}
+              onChange={handleStatusChange}
+              disabled={updatingStatus}
+            />
+          ) : (
+            <StatusBadge status={status} />
+          )}
         </div>
 
         {pin.address && (
