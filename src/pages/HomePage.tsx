@@ -69,24 +69,23 @@ export function HomePage() {
     setError(null)
 
     const code = generateInviteCode()
-    const { data: group, error: groupError } = await supabase
-      .from('groups')
-      .insert({
-        name: groupName.trim(),
-        invite_code: code,
-        created_by: user.id,
-      })
-      .select()
-      .single()
+    const groupId = crypto.randomUUID()
 
-    if (groupError || !group) {
-      setError(groupError?.message ?? 'Failed to create group')
+    const { error: groupError } = await supabase.from('groups').insert({
+      id: groupId,
+      name: groupName.trim(),
+      invite_code: code,
+      created_by: user.id,
+    })
+
+    if (groupError) {
+      setError(groupError.message)
       setCreating(false)
       return
     }
 
     const { error: memberError } = await supabase.from('group_members').insert({
-      group_id: group.id,
+      group_id: groupId,
       user_id: user.id,
     })
 
@@ -99,7 +98,7 @@ export function HomePage() {
     setShowCreate(false)
     setGroupName('')
     setCreating(false)
-    navigate(`/group/${group.id}`)
+    navigate(`/group/${groupId}`)
   }
 
   async function handleJoinGroup(e: FormEvent) {
@@ -109,20 +108,18 @@ export function HomePage() {
     setJoining(true)
     setError(null)
 
-    const { data: group, error: groupError } = await supabase
-      .from('groups')
-      .select('id')
-      .eq('invite_code', inviteCode.trim().toUpperCase())
-      .single()
+    const { data: groupId, error: groupError } = await supabase.rpc('get_group_id_by_invite_code', {
+      code: inviteCode.trim(),
+    })
 
-    if (groupError || !group) {
+    if (groupError || !groupId) {
       setError('Invalid invite code')
       setJoining(false)
       return
     }
 
     const { error: memberError } = await supabase.from('group_members').insert({
-      group_id: group.id,
+      group_id: groupId,
       user_id: user.id,
     })
 
@@ -139,7 +136,7 @@ export function HomePage() {
     setShowJoin(false)
     setInviteCode('')
     setJoining(false)
-    navigate(`/group/${group.id}`)
+    navigate(`/group/${groupId}`)
   }
 
   return (

@@ -80,6 +80,7 @@ begin
 end;
 $$;
 
+-- Check whether the current user belongs to a group
 create or replace function public.is_group_member(check_group_id uuid)
 returns boolean
 language sql
@@ -94,6 +95,19 @@ as $$
       and user_id = auth.uid()
   );
 $$;
+
+-- Look up a group by invite code (for joining; bypasses member-only SELECT policy)
+create or replace function public.get_group_id_by_invite_code(code text)
+returns uuid
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select id from public.groups where invite_code = upper(trim(code)) limit 1;
+$$;
+
+grant execute on function public.get_group_id_by_invite_code(text) to authenticated;
 
 
 -- -----------------------------------------------------------------------------
@@ -139,7 +153,10 @@ create policy "Users can update their own profile"
 drop policy if exists "Members can view their groups" on public.groups;
 create policy "Members can view their groups"
   on public.groups for select
-  using (public.is_group_member(id));
+  using (
+    public.is_group_member(id)
+    or created_by = auth.uid()
+  );
 
 drop policy if exists "Authenticated users can create groups" on public.groups;
 create policy "Authenticated users can create groups"
@@ -150,7 +167,14 @@ create policy "Authenticated users can create groups"
 drop policy if exists "Members can view group membership" on public.group_members;
 create policy "Members can view group membership"
   on public.group_members for select
-  using (public.is_group_member(group_id));
+  using (
+    user_id = auth.uid()
+    or public.is_group_member(group_id)
+    or exists (
+      select 1 from public.groups g
+      where g.id = group_members.group_id and g.created_by = auth.uid()
+    )
+  );
 
 drop policy if exists "Users can join groups" on public.group_members;
 create policy "Users can join groups"
@@ -208,6 +232,7 @@ create policy "Members can post comments"
 
 -- -----------------------------------------------------------------------------
 -- Storage (pin photos)
+-- Path format: {groupId}/{userId}/{filename}
 -- -----------------------------------------------------------------------------
 
 insert into storage.buckets (id, name, public)
@@ -220,6 +245,8 @@ create policy "Members can upload pin photos"
   with check (
     bucket_id = 'pin-photos'
     and auth.role() = 'authenticated'
+    and auth.uid()::text = (storage.foldername(name))[2]
+    and public.is_group_member(((storage.foldername(name))[1])::uuid)
   );
 
 drop policy if exists "Anyone can view pin photos" on storage.objects;
