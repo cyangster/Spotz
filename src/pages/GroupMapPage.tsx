@@ -6,6 +6,7 @@ import { DropPinForm } from '../components/DropPinForm'
 import { PinDetailPanel } from '../components/PinDetailPanel'
 import { PinMarker } from '../components/PinMarker'
 import { CenterOnUserButton, UserLocationMarker } from '../components/UserLocationMarker'
+import { HeaderProfileMenu } from '../components/HeaderProfileMenu'
 import { supabase } from '../lib/supabase'
 import { PROFILE_SELECT, type Group, type Pin } from '../lib/types'
 
@@ -178,6 +179,7 @@ export function GroupMapPage() {
           >
             Members
           </Link>
+          <HeaderProfileMenu />
         </div>
       </div>
 

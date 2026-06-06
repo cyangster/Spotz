@@ -15,6 +15,7 @@ create table if not exists public.profiles (
   display_name text not null,
   username text unique not null,
   email text not null,
+  avatar_url text,
   created_at timestamptz default now()
 );
 
@@ -58,6 +59,13 @@ create table if not exists public.comments (
   user_id uuid not null references public.profiles(id),
   content text not null,
   created_at timestamptz default now()
+);
+
+create table if not exists public.mention_reads (
+  user_id uuid not null references public.profiles(id) on delete cascade,
+  comment_id uuid not null references public.comments(id) on delete cascade,
+  read_at timestamptz default now(),
+  primary key (user_id, comment_id)
 );
 
 
@@ -140,6 +148,7 @@ alter table public.groups enable row level security;
 alter table public.group_members enable row level security;
 alter table public.pins enable row level security;
 alter table public.comments enable row level security;
+alter table public.mention_reads enable row level security;
 
 -- Profiles
 drop policy if exists "Users can insert their own profile" on public.profiles;
@@ -240,6 +249,13 @@ create policy "Members can post comments"
     )
   );
 
+-- Mention read tracking (@ notification badges)
+drop policy if exists "Users manage own mention reads" on public.mention_reads;
+create policy "Users manage own mention reads"
+  on public.mention_reads for all
+  using (user_id = auth.uid())
+  with check (user_id = auth.uid());
+
 
 -- -----------------------------------------------------------------------------
 -- Storage (pin photos)
@@ -264,6 +280,37 @@ drop policy if exists "Anyone can view pin photos" on storage.objects;
 create policy "Anyone can view pin photos"
   on storage.objects for select
   using (bucket_id = 'pin-photos');
+
+
+-- -----------------------------------------------------------------------------
+-- Storage (profile avatars)
+-- Path format: {userId}/avatar.{ext}
+-- -----------------------------------------------------------------------------
+
+insert into storage.buckets (id, name, public)
+values ('avatars', 'avatars', true)
+on conflict (id) do nothing;
+
+drop policy if exists "Users upload own avatar" on storage.objects;
+create policy "Users upload own avatar"
+  on storage.objects for insert
+  with check (
+    bucket_id = 'avatars'
+    and auth.uid()::text = (storage.foldername(name))[1]
+  );
+
+drop policy if exists "Users update own avatar" on storage.objects;
+create policy "Users update own avatar"
+  on storage.objects for update
+  using (
+    bucket_id = 'avatars'
+    and auth.uid()::text = (storage.foldername(name))[1]
+  );
+
+drop policy if exists "Anyone can view avatars" on storage.objects;
+create policy "Anyone can view avatars"
+  on storage.objects for select
+  using (bucket_id = 'avatars');
 
 
 -- -----------------------------------------------------------------------------
@@ -297,6 +344,7 @@ end $$;
 -- -----------------------------------------------------------------------------
 
 alter table public.profiles add column if not exists username text;
+alter table public.profiles add column if not exists avatar_url text;
 alter table public.pins add column if not exists category text;
 
 update public.pins set category = 'Other' where category is null;

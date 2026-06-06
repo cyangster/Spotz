@@ -1,5 +1,6 @@
 import { Link } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
+import { HeaderProfileMenu } from './HeaderProfileMenu'
 import type { ReactNode } from 'react'
 
 interface LayoutProps {
@@ -10,7 +11,7 @@ interface LayoutProps {
 }
 
 export function Layout({ children, title, backTo, actions }: LayoutProps) {
-  const { profile, signOut } = useAuth()
+  const { signOut } = useAuth()
 
   return (
     <div className="flex min-h-full flex-col bg-slate-50">
@@ -28,13 +29,9 @@ export function Layout({ children, title, backTo, actions }: LayoutProps) {
             )}
             {title && <h1 className="truncate text-lg font-semibold text-slate-900">{title}</h1>}
           </div>
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2 sm:gap-3">
             {actions}
-            {profile && (
-              <span className="hidden text-sm text-slate-500 sm:inline">
-                @{profile.username}
-              </span>
-            )}
+            <HeaderProfileMenu />
             <button
               type="button"
               onClick={() => signOut()}

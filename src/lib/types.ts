@@ -16,6 +16,7 @@ export interface Profile {
   display_name: string
   username: string
   email: string
+  avatar_url: string | null
 }
 
 export interface Group {
@@ -64,4 +65,4 @@ export interface GroupWithRole extends Group {
   member_count?: number
 }
 
-export const PROFILE_SELECT = 'id, display_name, username, email'
+export const PROFILE_SELECT = 'id, display_name, username, email, avatar_url'

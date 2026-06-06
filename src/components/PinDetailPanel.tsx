@@ -1,12 +1,18 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
+import { useAuth } from '../context/AuthContext'
 import { supabase } from '../lib/supabase'
 import type { Comment, Pin, PinCategory, Profile } from '../lib/types'
 import { PROFILE_SELECT } from '../lib/types'
 import { formatDate, getCategoryMeta } from '../lib/constants'
-import { renderTextWithMentions } from '../lib/mentions'
+import { commentMentionsUsername, renderTextWithMentions } from '../lib/mentions'
+import {
+  getMentionedUnreadOnPin,
+  useUnreadMentions,
+} from '../hooks/useUnreadMentions'
 import { CommentInput } from './CommentInput'
 import { StatusBadge } from './StatusBadge'
 import { DropPinForm } from './DropPinForm'
+import { UserAvatar } from './UserAvatar'
 
 interface PinDetailPanelProps {
   pin: Pin
@@ -25,6 +31,8 @@ export function PinDetailPanel({
   onUpdated,
   onDeleted,
 }: PinDetailPanelProps) {
+  const { profile } = useAuth()
+  const { unreadIds, markRead } = useUnreadMentions(profile?.username, userId)
   const [comments, setComments] = useState<Comment[]>([])
   const [members, setMembers] = useState<Profile[]>([])
   const [newComment, setNewComment] = useState('')
@@ -33,6 +41,13 @@ export function PinDetailPanel({
   const [deleting, setDeleting] = useState(false)
   const [editing, setEditing] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const commentsRef = useRef(comments)
+  const unreadIdsRef = useRef(unreadIds)
+  const profileRef = useRef(profile)
+
+  commentsRef.current = comments
+  unreadIdsRef.current = unreadIds
+  profileRef.current = profile
 
   const isOwner = pin.created_by === userId
   const category = (pin.category ?? 'Other') as PinCategory
@@ -77,8 +92,18 @@ export function PinDetailPanel({
 
     return () => {
       supabase.removeChannel(channel)
+      const currentProfile = profileRef.current
+      if (currentProfile?.username) {
+        const toMark = getMentionedUnreadOnPin(
+          commentsRef.current,
+          currentProfile.username,
+          userId,
+          unreadIdsRef.current,
+        )
+        void markRead(toMark)
+      }
     }
-  }, [pin.id, groupId])
+  }, [pin.id, groupId, userId, markRead])
 
   async function handlePostComment() {
     if (!newComment.trim()) return
@@ -120,6 +145,15 @@ export function PinDetailPanel({
     onClose()
   }
 
+  function commentMentionedMe(comment: Comment) {
+    if (!profile?.username) return false
+    return (
+      comment.user_id !== userId &&
+      unreadIds.has(comment.id) &&
+      commentMentionsUsername(comment.content, profile.username)
+    )
+  }
+
   if (editing) {
     return (
       <DropPinForm
@@ -141,6 +175,12 @@ export function PinDetailPanel({
     )
   }
 
+  const pinAuthor = pin.profile ?? {
+    display_name: 'Unknown',
+    username: 'unknown',
+    avatar_url: null,
+  }
+
   return (
     <div className="fixed inset-y-0 right-0 z-[1000] flex w-full max-w-md flex-col bg-white shadow-2xl">
       <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3">
@@ -154,33 +194,27 @@ export function PinDetailPanel({
         <div className="mb-4 flex flex-wrap items-center gap-2">
           <span className="text-2xl">{pin.icon}</span>
           <StatusBadge status={pin.status} />
-          <span
-            className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 px-2.5 py-0.5 text-xs font-medium text-slate-700"
-          >
-            <span
-              className="h-2 w-2 rounded-full"
-              style={{ backgroundColor: categoryMeta.color }}
-            />
+          <span className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 px-2.5 py-0.5 text-xs font-medium text-slate-700">
+            <span className="h-2 w-2 rounded-full" style={{ backgroundColor: categoryMeta.color }} />
             {categoryMeta.label}
           </span>
         </div>
 
         {pin.photo_url && (
-          <img
-            src={pin.photo_url}
-            alt={pin.label}
-            className="mb-4 w-full rounded-lg object-cover"
-          />
+          <img src={pin.photo_url} alt={pin.label} className="mb-4 w-full rounded-lg object-cover" />
         )}
 
         {pin.notes && (
           <p className="mb-4 whitespace-pre-wrap text-sm text-slate-700">{pin.notes}</p>
         )}
 
-        <p className="mb-6 text-xs text-slate-500">
-          Dropped by {pin.profile?.display_name ?? 'Unknown'}
-          {pin.profile?.username ? ` (@${pin.profile.username})` : ''} · {formatDate(pin.created_at)}
-        </p>
+        <div className="mb-6 flex items-center gap-2 text-xs text-slate-500">
+          <UserAvatar profile={pinAuthor} size="sm" />
+          <span>
+            Dropped by {pin.profile?.display_name ?? 'Unknown'}
+            {pin.profile?.username ? ` (@${pin.profile.username})` : ''} · {formatDate(pin.created_at)}
+          </span>
+        </div>
 
         {isOwner && (
           <div className="mb-6 flex gap-2">
@@ -211,24 +245,46 @@ export function PinDetailPanel({
             <p className="mb-4 text-sm text-slate-500">No comments yet.</p>
           ) : (
             <ul className="mb-4 space-y-3">
-              {comments.map((comment) => (
-                <li key={comment.id} className="rounded-lg bg-slate-50 p-3">
-                  <div className="mb-1 flex items-baseline justify-between gap-2">
-                    <span className="text-sm font-medium text-slate-900">
-                      {comment.profile?.display_name ?? 'Unknown'}
-                      {comment.profile?.username && (
-                        <span className="ml-1 font-normal text-blue-600">
-                          @{comment.profile.username}
+              {comments.map((comment) => {
+                const author = comment.profile ?? {
+                  display_name: 'Unknown',
+                  username: 'unknown',
+                  avatar_url: null,
+                }
+
+                return (
+                  <li
+                    key={comment.id}
+                    className={`flex gap-3 rounded-lg p-3 ${
+                      commentMentionedMe(comment) ? 'bg-blue-50 ring-1 ring-blue-100' : 'bg-slate-50'
+                    }`}
+                  >
+                    <UserAvatar
+                      profile={author}
+                      size="sm"
+                      showMentionBadge={commentMentionedMe(comment)}
+                    />
+                    <div className="min-w-0 flex-1">
+                      <div className="mb-1 flex items-baseline justify-between gap-2">
+                        <span className="text-sm font-medium text-slate-900">
+                          {comment.profile?.display_name ?? 'Unknown'}
+                          {comment.profile?.username && (
+                            <span className="ml-1 font-normal text-blue-600">
+                              @{comment.profile.username}
+                            </span>
+                          )}
                         </span>
-                      )}
-                    </span>
-                    <span className="text-xs text-slate-400">
-                      {formatDate(comment.created_at)}
-                    </span>
-                  </div>
-                  <p className="text-sm text-slate-700">{renderTextWithMentions(comment.content)}</p>
-                </li>
-              ))}
+                        <span className="shrink-0 text-xs text-slate-400">
+                          {formatDate(comment.created_at)}
+                        </span>
+                      </div>
+                      <p className="text-sm text-slate-700">
+                        {renderTextWithMentions(comment.content)}
+                      </p>
+                    </div>
+                  </li>
+                )
+              })}
             </ul>
           )}
 

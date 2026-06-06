@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useParams } from 'react-router-dom'
 import { Layout } from '../components/Layout'
+import { UserAvatar } from '../components/UserAvatar'
 import { supabase } from '../lib/supabase'
 import { formatDate } from '../lib/constants'
 import { PROFILE_SELECT, type Group, type GroupMember } from '../lib/types'
@@ -66,7 +67,18 @@ export function GroupMembersPage() {
                 key={member.id}
                 className="flex items-center justify-between rounded-xl border border-slate-200 bg-white px-4 py-3"
               >
-                <div>
+                <div className="flex items-center gap-3">
+                  <UserAvatar
+                    profile={
+                      member.profile ?? {
+                        display_name: 'Unknown',
+                        username: 'unknown',
+                        avatar_url: null,
+                      }
+                    }
+                    size="md"
+                  />
+                  <div>
                   <p className="font-medium text-slate-900">
                     {member.profile?.display_name ?? 'Unknown'}
                     {member.profile?.username && (
@@ -76,6 +88,7 @@ export function GroupMembersPage() {
                     )}
                   </p>
                   <p className="text-xs text-slate-500">{member.profile?.email}</p>
+                  </div>
                 </div>
                 <span className="text-xs text-slate-400">
                   Joined {formatDate(member.joined_at)}

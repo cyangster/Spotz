@@ -55,3 +55,8 @@ export function insertMention(value: string, cursor: number, username: string): 
   const next = `${value.slice(0, start)}@${username} ${after}`
   return { value: next, cursor: start + username.length + 2 }
 }
+
+export function commentMentionsUsername(content: string, username: string): boolean {
+  const regex = new RegExp(`(^|[\\s])@${username}\\b`, 'i')
+  return regex.test(content)
+}
