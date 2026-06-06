@@ -4,6 +4,7 @@ import { MapContainer, TileLayer, useMap, useMapEvents } from 'react-leaflet'
 import { useAuth } from '../context/AuthContext'
 import { DropPinForm } from '../components/DropPinForm'
 import { PinDetailPanel } from '../components/PinDetailPanel'
+import { PinListPanel } from '../components/PinListPanel'
 import { PinMarker } from '../components/PinMarker'
 import { CenterOnUserButton, UserLocationMarker } from '../components/UserLocationMarker'
 import { HeaderProfileMenu } from '../components/HeaderProfileMenu'
@@ -36,6 +37,16 @@ function MapInitialCenter({ lat, lng }: { lat: number; lng: number }) {
   return null
 }
 
+function MapFlyTo({ latitude, longitude }: { latitude: number; longitude: number }) {
+  const map = useMap()
+
+  useEffect(() => {
+    map.flyTo([latitude, longitude], 16, { animate: true })
+  }, [latitude, longitude, map])
+
+  return null
+}
+
 export function GroupMapPage() {
   const { id: groupId } = useParams<{ id: string }>()
   const { user, profile } = useAuth()
@@ -48,6 +59,8 @@ export function GroupMapPage() {
   const [initialCenter, setInitialCenter] = useState<{ lat: number; lng: number } | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [listOpen, setListOpen] = useState(false)
+  const [mapFocus, setMapFocus] = useState<{ lat: number; lng: number } | null>(null)
 
   const loadPins = useCallback(async () => {
     if (!groupId) return
@@ -132,6 +145,11 @@ export function GroupMapPage() {
     setInitialCenter((prev) => prev ?? { lat, lng })
   }, [])
 
+  function selectPin(pin: Pin) {
+    setSelectedPin(pin)
+    setMapFocus({ lat: pin.latitude, lng: pin.longitude })
+  }
+
   function handlePinUpdated() {
     loadPins()
     if (selectedPin) {
@@ -169,6 +187,17 @@ export function GroupMapPage() {
     <div className="relative h-full w-full">
       <div className="absolute left-0 right-0 top-0 z-[500] flex items-center justify-between gap-2 bg-white/90 px-3 py-2 shadow-sm backdrop-blur sm:px-4">
         <div className="flex min-w-0 items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setListOpen(true)}
+            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-slate-300 bg-white text-slate-700 hover:bg-slate-50"
+            title="Pin list"
+            aria-label="Open pin list"
+          >
+            <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" d="M4 6h16M4 12h16M4 18h10" />
+            </svg>
+          </button>
           <Link to="/" className="shrink-0 text-sm text-slate-500 hover:text-slate-800">
             ← Spotz
           </Link>
@@ -208,6 +237,7 @@ export function GroupMapPage() {
           url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
         />
         {initialCenter && <MapInitialCenter lat={initialCenter.lat} lng={initialCenter.lng} />}
+        {mapFocus && <MapFlyTo latitude={mapFocus.lat} longitude={mapFocus.lng} />}
         <UserLocationMarker onFirstFix={handleFirstLocation} />
         <CenterOnUserButton />
         <MapClickHandler onMapClick={handleMapClick} disabled={Boolean(dropLocation)} />
@@ -217,10 +247,22 @@ export function GroupMapPage() {
             pin={pin}
             isOwn={pin.created_by === user?.id}
             hasUnreadMention={unreadPinIds.has(pin.id)}
-            onSelect={(p) => setSelectedPin(p)}
+            onSelect={selectPin}
           />
         ))}
       </MapContainer>
+
+      {listOpen && (
+        <PinListPanel
+          pins={pins}
+          selectedPinId={selectedPin?.id ?? null}
+          onSelectPin={(pin) => {
+            selectPin(pin)
+            setListOpen(false)
+          }}
+          onClose={() => setListOpen(false)}
+        />
+      )}
 
       {dropLocation && user && groupId && (
         <DropPinForm

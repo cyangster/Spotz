@@ -46,6 +46,7 @@ export interface Pin {
   icon: string
   notes: string | null
   photo_url: string | null
+  address: string | null
   latitude: number
   longitude: number
   created_at: string

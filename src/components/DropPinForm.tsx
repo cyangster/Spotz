@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from 'react'
+import { useEffect, useState, type FormEvent } from 'react'
 import type { PinCategory, PinStatus } from '../lib/types'
 import {
   getCategoryColor,
@@ -7,6 +7,7 @@ import {
   PIN_ICONS,
   PIN_STATUSES,
 } from '../lib/constants'
+import { geocodeAddress, reverseGeocode } from '../lib/geocode'
 import { supabase } from '../lib/supabase'
 
 export interface DropPinData {
@@ -15,6 +16,7 @@ export interface DropPinData {
   category: PinCategory
   icon: string
   notes: string
+  address: string
   photo: File | null
 }
 
@@ -44,15 +46,43 @@ export function DropPinForm({
   const [category, setCategory] = useState<PinCategory>(initialData?.category ?? 'Other')
   const [icon, setIcon] = useState(initialData?.icon ?? getCategoryMeta('Other').icon)
   const [notes, setNotes] = useState(initialData?.notes ?? '')
+  const [address, setAddress] = useState(initialData?.address ?? '')
+  const [coords, setCoords] = useState({ latitude, longitude })
   const [photo, setPhoto] = useState<File | null>(null)
   const [saving, setSaving] = useState(false)
+  const [geocoding, setGeocoding] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   const isEditing = Boolean(pinId)
 
+  useEffect(() => {
+    if (initialData?.address) return
+    reverseGeocode(latitude, longitude).then((result) => {
+      if (result) setAddress(result)
+    })
+  }, [latitude, longitude, initialData?.address])
+
   function handleCategoryChange(nextCategory: PinCategory) {
     setCategory(nextCategory)
     setIcon(getCategoryMeta(nextCategory).icon)
+  }
+
+  async function handleLookupAddress() {
+    if (!address.trim()) return
+
+    setGeocoding(true)
+    setError(null)
+
+    const result = await geocodeAddress(address)
+    if (!result) {
+      setError('Address not found. Try a more specific search.')
+      setGeocoding(false)
+      return
+    }
+
+    setCoords({ latitude: result.latitude, longitude: result.longitude })
+    setAddress(result.displayName)
+    setGeocoding(false)
   }
 
   async function uploadPhoto(file: File): Promise<string | null> {
@@ -81,6 +111,19 @@ export function DropPinForm({
     setSaving(true)
     setError(null)
 
+    let finalCoords = coords
+    let finalAddress = address.trim() || null
+
+    if (address.trim()) {
+      const geocoded = await geocodeAddress(address)
+      if (geocoded) {
+        finalCoords = { latitude: geocoded.latitude, longitude: geocoded.longitude }
+        finalAddress = geocoded.displayName
+        setCoords(finalCoords)
+        setAddress(finalAddress)
+      }
+    }
+
     const color = getCategoryColor(category)
 
     try {
@@ -89,15 +132,20 @@ export function DropPinForm({
         photoUrl = await uploadPhoto(photo)
       }
 
+      const payload = {
+        label: name.trim(),
+        status,
+        category,
+        color,
+        icon,
+        notes: notes.trim() || null,
+        address: finalAddress,
+        latitude: finalCoords.latitude,
+        longitude: finalCoords.longitude,
+      }
+
       if (isEditing && pinId) {
-        const updates: Record<string, unknown> = {
-          label: name.trim(),
-          status,
-          category,
-          color,
-          icon,
-          notes: notes.trim() || null,
-        }
+        const updates: Record<string, unknown> = { ...payload }
         if (photoUrl) {
           updates.photo_url = photoUrl
         }
@@ -113,15 +161,8 @@ export function DropPinForm({
         const { error: insertError } = await supabase.from('pins').insert({
           group_id: groupId,
           created_by: userId,
-          label: name.trim(),
-          status,
-          category,
-          color,
-          icon,
-          notes: notes.trim() || null,
           photo_url: photoUrl,
-          latitude,
-          longitude,
+          ...payload,
         })
 
         if (insertError) throw new Error(insertError.message)
@@ -149,7 +190,7 @@ export function DropPinForm({
         </div>
 
         <p className="mb-4 text-sm text-slate-500">
-          {latitude.toFixed(5)}, {longitude.toFixed(5)}
+          {coords.latitude.toFixed(5)}, {coords.longitude.toFixed(5)}
         </p>
 
         <form onSubmit={handleSubmit} className="space-y-4">
@@ -163,6 +204,30 @@ export function DropPinForm({
               placeholder="Coffee spot, best view..."
               required
             />
+          </div>
+
+          <div>
+            <label className="mb-1 block text-sm font-medium text-slate-700">Address</label>
+            <div className="flex gap-2">
+              <input
+                type="text"
+                value={address}
+                onChange={(e) => setAddress(e.target.value)}
+                className="flex-1 rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                placeholder="123 Main St, City..."
+              />
+              <button
+                type="button"
+                onClick={handleLookupAddress}
+                disabled={geocoding || !address.trim()}
+                className="shrink-0 rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+              >
+                {geocoding ? '...' : 'Locate'}
+              </button>
+            </div>
+            <p className="mt-1 text-xs text-slate-500">
+              Optional. Locating moves the pin to that address.
+            </p>
           </div>
 
           <div>

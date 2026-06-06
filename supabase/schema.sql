@@ -48,6 +48,7 @@ create table if not exists public.pins (
   icon text not null,
   notes text,
   photo_url text,
+  address text,
   latitude double precision not null,
   longitude double precision not null,
   created_at timestamptz default now()
@@ -127,6 +128,32 @@ as $$
 $$;
 
 grant execute on function public.get_group_id_by_invite_code(text) to authenticated;
+
+-- Quick status update from pin card (any group member)
+create or replace function public.update_pin_status(p_pin_id uuid, p_status text)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_group_id uuid;
+begin
+  if p_status not in ('Went', 'Want to go', 'Favorite', 'Avoid') then
+    raise exception 'invalid status';
+  end if;
+
+  select group_id into v_group_id from public.pins where id = p_pin_id;
+
+  if v_group_id is null or not public.is_group_member(v_group_id) then
+    raise exception 'not allowed';
+  end if;
+
+  update public.pins set status = p_status where id = p_pin_id;
+end;
+$$;
+
+grant execute on function public.update_pin_status(uuid, text) to authenticated;
 
 
 -- -----------------------------------------------------------------------------
@@ -346,6 +373,7 @@ end $$;
 alter table public.profiles add column if not exists username text;
 alter table public.profiles add column if not exists avatar_url text;
 alter table public.pins add column if not exists category text;
+alter table public.pins add column if not exists address text;
 
 update public.pins set category = 'Other' where category is null;
 

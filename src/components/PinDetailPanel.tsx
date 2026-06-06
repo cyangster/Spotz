@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useAuth } from '../context/AuthContext'
 import { supabase } from '../lib/supabase'
-import type { Comment, Pin, PinCategory, Profile } from '../lib/types'
+import type { Comment, Pin, PinCategory, PinStatus, Profile } from '../lib/types'
 import { PROFILE_EMBED } from '../lib/types'
 import { formatDate, getCategoryMeta } from '../lib/constants'
 import { commentMentionsUsername, renderTextWithMentions } from '../lib/mentions'
@@ -10,7 +10,7 @@ import {
   useUnreadMentions,
 } from '../hooks/useUnreadMentions'
 import { CommentInput } from './CommentInput'
-import { StatusBadge } from './StatusBadge'
+import { StatusPicker } from './StatusBadge'
 import { DropPinForm } from './DropPinForm'
 import { UserAvatar } from './UserAvatar'
 
@@ -33,12 +33,14 @@ export function PinDetailPanel({
 }: PinDetailPanelProps) {
   const { profile } = useAuth()
   const { unreadIds, markRead } = useUnreadMentions(profile?.username, userId)
+  const [status, setStatus] = useState<PinStatus>(pin.status)
   const [comments, setComments] = useState<Comment[]>([])
   const [members, setMembers] = useState<Profile[]>([])
   const [newComment, setNewComment] = useState('')
   const [loadingComments, setLoadingComments] = useState(true)
   const [posting, setPosting] = useState(false)
   const [deleting, setDeleting] = useState(false)
+  const [updatingStatus, setUpdatingStatus] = useState(false)
   const [editing, setEditing] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const commentsRef = useRef(comments)
@@ -52,6 +54,10 @@ export function PinDetailPanel({
   const isOwner = pin.created_by === userId
   const category = (pin.category ?? 'Other') as PinCategory
   const categoryMeta = getCategoryMeta(category)
+
+  useEffect(() => {
+    setStatus(pin.status)
+  }, [pin.id, pin.status])
 
   async function loadComments() {
     const { data, error: fetchError } = await supabase
@@ -115,6 +121,26 @@ export function PinDetailPanel({
       void markRead(toMark)
     }
   }, [comments, loadingComments, profile?.username, userId, unreadIds, markRead])
+
+  async function handleStatusChange(nextStatus: PinStatus) {
+    if (nextStatus === status) return
+
+    setUpdatingStatus(true)
+    setError(null)
+
+    const { error: rpcError } = await supabase.rpc('update_pin_status', {
+      p_pin_id: pin.id,
+      p_status: nextStatus,
+    })
+
+    if (rpcError) {
+      setError(rpcError.message)
+    } else {
+      setStatus(nextStatus)
+      onUpdated()
+    }
+    setUpdatingStatus(false)
+  }
 
   async function handlePostComment() {
     if (!newComment.trim()) return
@@ -180,6 +206,7 @@ export function PinDetailPanel({
           category,
           icon: pin.icon,
           notes: pin.notes ?? '',
+          address: pin.address ?? '',
         }}
         onClose={() => setEditing(false)}
         onSaved={onUpdated}
@@ -195,22 +222,56 @@ export function PinDetailPanel({
 
   return (
     <div className="fixed inset-y-0 right-0 z-[1000] flex w-full max-w-md flex-col bg-white shadow-2xl">
-      <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3">
-        <h2 className="truncate text-lg font-semibold text-slate-900">{pin.label}</h2>
-        <button type="button" onClick={onClose} className="text-slate-400 hover:text-slate-700">
-          ✕
-        </button>
+      <div className="flex items-start justify-between gap-3 border-b border-slate-200 px-4 py-3">
+        <h2 className="min-w-0 flex-1 truncate pt-0.5 text-lg font-semibold text-slate-900">
+          {pin.label}
+        </h2>
+        <div className="flex shrink-0 flex-col items-end gap-1">
+          {isOwner && (
+            <button
+              type="button"
+              onClick={() => setEditing(true)}
+              className="text-sm font-medium text-blue-600 hover:text-blue-700"
+            >
+              Edit
+            </button>
+          )}
+          <button type="button" onClick={onClose} className="text-slate-400 hover:text-slate-700">
+            ✕
+          </button>
+        </div>
       </div>
 
       <div className="flex-1 overflow-y-auto p-4">
-        <div className="mb-4 flex flex-wrap items-center gap-2">
-          <span className="text-2xl">{pin.icon}</span>
-          <StatusBadge status={pin.status} />
-          <span className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 px-2.5 py-0.5 text-xs font-medium text-slate-700">
-            <span className="h-2 w-2 rounded-full" style={{ backgroundColor: categoryMeta.color }} />
-            {categoryMeta.label}
-          </span>
+        <div className="mb-4">
+          <div className="mb-2 flex flex-wrap items-center gap-2">
+            <span className="text-2xl">{pin.icon}</span>
+            <span className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 px-2.5 py-0.5 text-xs font-medium text-slate-700">
+              <span
+                className="h-2 w-2 rounded-full"
+                style={{ backgroundColor: categoryMeta.color }}
+              />
+              {categoryMeta.label}
+            </span>
+          </div>
+          <p className="mb-2 text-xs font-medium text-slate-500">Status — tap to change</p>
+          <StatusPicker
+            status={status}
+            onChange={handleStatusChange}
+            disabled={updatingStatus}
+          />
         </div>
+
+        {pin.address && (
+          <a
+            href={`https://www.openstreetmap.org/?mlat=${pin.latitude}&mlon=${pin.longitude}#map=17/${pin.latitude}/${pin.longitude}`}
+            target="_blank"
+            rel="noreferrer"
+            className="mb-4 block rounded-lg bg-slate-50 px-3 py-2 text-sm text-slate-700 hover:bg-slate-100"
+          >
+            📍 {pin.address}
+          </a>
+        )}
 
         {pin.photo_url && (
           <img src={pin.photo_url} alt={pin.label} className="mb-4 w-full rounded-lg object-cover" />
@@ -220,7 +281,7 @@ export function PinDetailPanel({
           <p className="mb-4 whitespace-pre-wrap text-sm text-slate-700">{pin.notes}</p>
         )}
 
-        <div className="mb-6 flex items-center gap-2 text-xs text-slate-500">
+        <div className="mb-4 flex items-center gap-2 text-xs text-slate-500">
           <UserAvatar profile={pinAuthor} size="sm" />
           <span>
             Dropped by {pin.profile?.display_name ?? 'Unknown'}
@@ -229,23 +290,14 @@ export function PinDetailPanel({
         </div>
 
         {isOwner && (
-          <div className="mb-6 flex gap-2">
-            <button
-              type="button"
-              onClick={() => setEditing(true)}
-              className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-50"
-            >
-              Edit
-            </button>
-            <button
-              type="button"
-              onClick={handleDelete}
-              disabled={deleting}
-              className="rounded-lg border border-red-200 px-3 py-1.5 text-sm text-red-600 hover:bg-red-50 disabled:opacity-50"
-            >
-              {deleting ? 'Deleting...' : 'Delete'}
-            </button>
-          </div>
+          <button
+            type="button"
+            onClick={handleDelete}
+            disabled={deleting}
+            className="mb-6 rounded-lg border border-red-200 px-3 py-1.5 text-sm text-red-600 hover:bg-red-50 disabled:opacity-50"
+          >
+            {deleting ? 'Deleting...' : 'Delete pin'}
+          </button>
         )}
 
         <div>
